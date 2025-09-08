@@ -1,0 +1,357 @@
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
+import random
+import time
+
+W, H = 900, 720
+
+def my_abs(v):
+    return v if v >= 0 else -v
+
+def find_zone(x1, y1, x2, y2):
+    dx = x2 - x1
+    dy = y2 - y1
+    adx = my_abs(dx)
+    ady = my_abs(dy)
+    if adx >= ady:
+        if dx >= 0 and dy >= 0:
+            return 0
+        if dx >= 0 and dy < 0:
+            return 7
+        if dx < 0 and dy >= 0:
+            return 3
+        return 4 
+    else:
+    
+        if dx >= 0 and dy >= 0:
+            return 1
+        if dx < 0 and dy >= 0:
+            return 2
+        if dx < 0 and dy < 0:
+            return 5
+        return 6  
+
+
+def to_zone0(zone, x, y):
+    if zone == 0:
+        return x, y
+    if zone == 1:
+        return y, x
+    if zone == 2:
+        return y, -x
+    if zone == 3:
+        return -x, y
+    if zone == 4:
+        return -x, -y
+    if zone == 5:
+        return -y, -x
+    if zone == 6:
+        return -y, x
+    if zone == 7:
+        return x, -y
+    return x, y
+
+
+def from_zone0(zone, x, y):
+    if zone == 0:
+        return x, y
+    if zone == 1:
+        return y, x
+    if zone == 2:
+        return -y, x
+    if zone == 3:
+        return -x, y
+    if zone == 4:
+        return -x, -y
+    if zone == 5:
+        return -y, -x
+    if zone == 6:
+        return y, -x
+    if zone == 7:
+        return x, -y
+    return x, y
+
+def midpoint_zone0_points(x1, y1, x2, y2):
+    pts = []
+    dx = x2 - x1
+    dy = y2 - y1
+    if dx == 0:
+        step = 1 if y2 >= y1 else -1
+        y = y1
+        while True:
+            pts.append((x1, y))
+            if y == y2:
+                break
+            y += step
+        return pts
+
+    d = 2 * dy - dx
+    incE = 2 * dy
+    incNE = 2 * (dy - dx)
+    x = x1
+    y = y1
+    while x <= x2:
+        pts.append((x, y))
+        if d > 0:
+            d += incNE
+            y += 1
+        else:
+            d += incE
+        x += 1
+    return pts
+
+def draw_line_midpoint(x1, y1, x2, y2):
+    zone = find_zone(x1, y1, x2, y2)
+    x1p, y1p = to_zone0(zone, x1, y1)
+    x2p, y2p = to_zone0(zone, x2, y2)
+
+    if x1p > x2p:
+        x1p, y1p, x2p, y2p = x2p, y2p, x1p, y1p
+
+    pts = midpoint_zone0_points(int(x1p), int(y1p), int(x2p), int(y2p))
+    glBegin(GL_POINTS)
+    for xp, yp in pts:
+        xb, yb = from_zone0(zone, xp, yp)
+        glVertex2i(int(xb), int(yb))
+    glEnd()
+
+score = 0
+game_over = False
+paused = False
+
+catcher_w_top = 140
+catcher_w_bottom = 200
+catcher_h = 22
+catcher_x = (W // 2) - (catcher_w_bottom // 2)
+catcher_y = 40
+catcher_speed = 14
+catcher_color = (1.0, 1.0, 1.0)
+
+
+diamond_size = 12
+diamond_x = W // 2
+diamond_y = H // 2
+diamond_speed = 120.0  
+diamond_color = (0.8, 0.2, 0.9)
+
+
+btn_top_y = H - 60
+left_btn_rect = (20, btn_top_y - 20, 80, btn_top_y + 20)      # (x1,y1,x2,y2)
+mid_btn_rect  = (W//2 - 30, btn_top_y - 20, W//2 + 30, btn_top_y + 20)
+right_btn_rect = (W - 90, btn_top_y - 20, W - 10, btn_top_y + 20)
+
+
+last_time = time.time()
+
+
+POINT_SIZE = 3
+
+def draw_catcher(x, y, w_top, w_bottom, h, color):
+    glColor3f(*color)
+    half_top = w_top // 2
+    half_bot = w_bottom // 2
+    cx = x + (w_bottom // 2)
+    
+    top_left = (cx - half_top, y + h)
+    top_right = (cx + half_top, y + h)
+    bot_left = (cx - half_bot, y)
+    bot_right = (cx + half_bot, y)
+    draw_line_midpoint(bot_left[0], bot_left[1], bot_right[0], bot_right[1])  
+    draw_line_midpoint(bot_left[0], bot_left[1], top_left[0], top_left[1])      
+    draw_line_midpoint(bot_right[0], bot_right[1], top_right[0], top_right[1])  
+    draw_line_midpoint(top_left[0], top_left[1], top_right[0], top_right[1])    
+
+def draw_diamond(cx, cy, s, color):
+    glColor3f(*color)
+    p1 = (cx, cy + s)
+    p2 = (cx + s, cy)
+    p3 = (cx, cy - s)
+    p4 = (cx - s, cy)
+    draw_line_midpoint(p1[0], p1[1], p2[0], p2[1])
+    draw_line_midpoint(p2[0], p2[1], p3[0], p3[1])
+    draw_line_midpoint(p3[0], p3[1], p4[0], p4[1])
+    draw_line_midpoint(p4[0], p4[1], p1[0], p1[1])
+
+def draw_left_arrow(cx, cy, size):
+    glColor3f(0.0, 0.8, 0.7)  
+    tip = (cx - size//2, cy)
+    up = (cx + size//2, cy + size//2)
+    down = (cx + size//2, cy - size//2)
+    draw_line_midpoint(tip[0], tip[1], up[0], up[1])
+    draw_line_midpoint(tip[0], tip[1], down[0], down[1])
+    draw_line_midpoint(up[0], up[1], down[0], down[1])
+
+def draw_play_pause(cx, cy, size, is_paused):
+    glColor3f(1.0, 0.75, 0.0)  
+    if not is_paused:
+        bar_w = size // 5
+        gap = bar_w // 2 + 2
+        draw_line_midpoint(cx - gap - bar_w, cy - size//2, cx - gap - bar_w, cy + size//2)
+        draw_line_midpoint(cx - gap - bar_w, cy - size//2, cx - gap, cy - size//2)
+        draw_line_midpoint(cx - gap, cy - size//2, cx - gap, cy + size//2)
+        draw_line_midpoint(cx - gap - bar_w, cy + size//2, cx - gap, cy + size//2)
+        draw_line_midpoint(cx + gap, cy - size//2, cx + gap, cy + size//2)
+        draw_line_midpoint(cx + gap, cy - size//2, cx + gap + bar_w, cy - size//2)
+        draw_line_midpoint(cx + gap + bar_w, cy - size//2, cx + gap + bar_w, cy + size//2)
+        draw_line_midpoint(cx + gap, cy + size//2, cx + gap + bar_w, cy + size//2)
+    else:
+        left = (cx - size//3, cy - size//2)
+        right = (cx + size//3, cy)
+        top = (cx - size//3, cy + size//2)
+        draw_line_midpoint(left[0], left[1], right[0], right[1])
+        draw_line_midpoint(right[0], right[1], top[0], top[1])
+        draw_line_midpoint(top[0], top[1], left[0], left[1])
+
+def draw_red_x(cx, cy, size):
+    glColor3f(0.9, 0.15, 0.15)
+    off = size // 2
+    draw_line_midpoint(cx - off, cy - off, cx + off, cy + off)
+    draw_line_midpoint(cx - off, cy + off, cx + off, cy - off)
+
+def has_collided(ax, ay, aw, ah, bx, by, bw, bh):
+    return (ax < bx + bw and ax + aw > bx and ay < by + bh and ay + ah > by)
+
+def in_rect(px, py, rect):
+    x1, y1, x2, y2 = rect
+    return (px >= x1 and px <= x2 and py >= y1 and py <= y2)
+
+def update_game(dt):
+    global diamond_y, diamond_x, diamond_color, score, diamond_speed, game_over, last_time
+    if paused or game_over:
+        return
+
+    diamond_y -= diamond_speed * dt
+
+    dbw = diamond_size * 2
+    dbh = diamond_size * 2
+    diamond_bbox_x = diamond_x - diamond_size
+    diamond_bbox_y = diamond_y - diamond_size
+
+    catcher_bbox_x = catcher_x
+    catcher_bbox_y = catcher_y
+    catcher_bbox_w = catcher_w_bottom
+    catcher_bbox_h = catcher_h
+
+    if has_collided(catcher_bbox_x, catcher_bbox_y, catcher_bbox_w, catcher_bbox_h,
+                    diamond_bbox_x, diamond_bbox_y, dbw, dbh):
+        score += 1
+        print("Score:", score)
+        diamond_y = H - 140
+        diamond_x = random.randint(120, W - 120)
+        diamond_color = (random.random(), random.random(), random.random())
+        diamond_speed += 8.0
+
+    if diamond_y < 0:
+        game_over = True
+        print("Game Over! Score:", score)
+
+def display():
+    global last_time
+    now = time.time()
+    dt = now - last_time
+    last_time = now
+
+    update_game(dt)
+
+    glClear(GL_COLOR_BUFFER_BIT)
+
+    draw_left_arrow(50, btn_top_y, 36)
+    draw_play_pause(W//2, btn_top_y, 44, paused)
+    draw_red_x(W - 50, btn_top_y, 36)
+
+   
+    if not game_over:
+        draw_diamond(int(diamond_x), int(diamond_y), diamond_size, diamond_color)
+    else:
+        pass
+
+    if game_over:
+        draw_catcher(catcher_x, catcher_y, catcher_w_top, catcher_w_bottom, catcher_h, (0.85, 0.2, 0.2))
+    else:
+        draw_catcher(catcher_x, catcher_y, catcher_w_top, catcher_w_bottom, catcher_h, catcher_color)
+
+    glutSwapBuffers()
+    glutPostRedisplay()
+
+def keyboard(key, x, y):
+    global catcher_x, score
+    if key == b'a':
+        if catcher_x - catcher_speed >= 0:
+            catcher_x -= catcher_speed
+    elif key == b'd':
+        if catcher_x + catcher_w_bottom + catcher_speed <= W:
+            catcher_x += catcher_speed
+    elif key == b'r':
+        reset_game()
+    elif key == b'p':
+        toggle_pause()
+    elif key == b'q':
+        print("Goodbye! Score:", score)
+        glutLeaveMainLoop()
+
+def special_keys(key, x, y):
+    global catcher_x
+    if key == GLUT_KEY_LEFT:
+        if catcher_x - catcher_speed >= 0:
+            catcher_x -= catcher_speed
+    elif key == GLUT_KEY_RIGHT:
+        if catcher_x + catcher_w_bottom + catcher_speed <= W:
+            catcher_x += catcher_speed
+
+def mouse(button, state, mx, my):
+    my_conv = H - my
+    if button == GLUT_LEFT_BUTTON and state == GLUT_DOWN:
+        if in_rect(mx, my_conv, left_btn_rect):
+            reset_game()
+        elif in_rect(mx, my_conv, mid_btn_rect):
+            toggle_pause()
+        elif in_rect(mx, my_conv, right_btn_rect):
+            print("Goodbye! Score:", score)
+            glutLeaveMainLoop()
+
+def reset_game():
+    global diamond_x, diamond_y, diamond_speed, score, game_over, paused, catcher_x, last_time
+    diamond_x = W // 2
+    diamond_y = H // 2 + 40
+    diamond_speed = 120.0
+    score = 0
+    game_over = False
+    paused = False
+    catcher_x = (W // 2) - (catcher_w_bottom // 2)
+    last_time = time.time()
+    print("Starting over!")
+
+def toggle_pause():
+    global paused, last_time
+    paused = not paused
+    last_time = time.time()
+    if paused:
+        print("Paused")
+    else:
+        print("Resumed")
+
+def init():
+    glClearColor(0.07, 0.07, 0.07, 1.0)
+    glColor3f(1, 1, 1)
+    glPointSize(POINT_SIZE)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    gluOrtho2D(0, W, 0, H)
+
+glutInit()
+glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
+glutInitWindowSize(W, H)
+glutInitWindowPosition(80, 40)
+glutCreateWindow(b"Catch the Diamonds!")
+init()
+glutDisplayFunc(display)
+glutKeyboardFunc(keyboard)
+glutSpecialFunc(special_keys)
+glutMouseFunc(mouse)
+
+diamond_x = random.randint(120, W - 120)
+diamond_y = H - 140
+last_time = time.time()
+
+glutMainLoop()
