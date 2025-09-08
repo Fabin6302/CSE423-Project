@@ -1,0 +1,114 @@
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
+import random
+
+
+winWidth, winHeight = 640, 360
+points = []  
+speed = 0.2       
+frozen = False
+blinking = False
+blink_state = True
+blink_counter = 0  
+
+
+def convert_coordinate(x, y):
+    a = x - (winWidth // 2)
+    b = (winHeight // 2) - y
+    return a, b
+
+
+def display():
+    glClear(GL_COLOR_BUFFER_BIT)
+    glPointSize(4)   
+
+    glBegin(GL_POINTS)
+    for p in points:
+        if not p[7]:  
+            continue
+        glColor3f(p[4], p[5], p[6])
+        glVertex2f(p[0], p[1])
+    glEnd()
+
+    glutSwapBuffers()
+
+def idle():
+    global blink_state, blink_counter
+    if frozen:
+        return
+
+    
+    if blinking:
+        blink_counter += 1
+        if blink_counter > 20:  
+            blink_state = not blink_state
+            for p in points:
+                p[7] = blink_state
+            blink_counter = 0
+
+
+    for p in points:
+        p[0] += p[2] * speed
+        p[1] += p[3] * speed
+    
+        if p[0] > winWidth//2 or p[0] < -winWidth//2:
+            p[2] *= -1
+        if p[1] > winHeight//2 or p[1] < -winHeight//2:
+            p[3] *= -1
+
+    glutPostRedisplay()
+
+def mouse(button, state, x, y):
+    global blinking
+    if state != GLUT_DOWN:
+        return
+
+    cx, cy = convert_coordinate(x, y)
+    if button == GLUT_RIGHT_BUTTON:
+    
+        dx = random.choice([-1, 1])
+        dy = random.choice([-1, 1])
+        r, g, b = random.random(), random.random(), random.random()
+        points.append([cx, cy, dx, dy, r, g, b, True])
+    elif button == GLUT_LEFT_BUTTON:
+        blinking = not blinking
+        if not blinking:
+            for p in points:
+                p[7] = True  
+
+def keyboard(key, x, y):
+    global frozen
+    if key == b' ': 
+        frozen = not frozen
+
+def special(key, x, y):
+    global speed
+    if key == GLUT_KEY_UP:
+        speed += 0.1   
+    elif key == GLUT_KEY_DOWN and speed > 0.1:
+        speed -= 0.1   
+
+
+def init():
+    glClearColor(0, 0, 0, 1)
+    glMatrixMode(GL_PROJECTION)
+    glLoadIdentity()
+    glOrtho(-winWidth//2, winWidth//2, -winHeight//2, winHeight//2, 0, 1)
+
+def main():
+    glutInit()
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB)
+    glutInitWindowSize(winWidth, winHeight)
+    glutCreateWindow(b"Amazing Box (Slower + Smaller Balls)")
+
+    init()
+    glutDisplayFunc(display)
+    glutIdleFunc(idle)
+    glutMouseFunc(mouse)
+    glutKeyboardFunc(keyboard)
+    glutSpecialFunc(special)
+
+    glutMainLoop()
+
+main()
