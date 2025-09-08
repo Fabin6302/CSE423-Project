@@ -1,0 +1,397 @@
+import math, random, time
+
+from OpenGL.GL import *
+from OpenGL.GLU import *
+from OpenGL.GLUT import *
+
+WINDOW_W, WINDOW_H = 1200, 800
+GRID_SIZE = 20
+NUM_ENEMIES = 5
+PLAYER_LIFE = 5
+MAX_MISSED = 10
+BULLET_SPEED = 0.6
+ENEMY_SPEED = 0.02
+BULLET_LIFETIME = 400
+
+
+state = {}
+QUADRIC = None  
+
+
+
+def reset_state():
+    state.clear()
+    state['player_pos'] = [0.0, 0.0, 0.0]
+    state['player_angle'] = 0.0
+    state['life'] = PLAYER_LIFE
+    state['score'] = 0
+    state['missed'] = 0
+    state['bullets'] = []
+    state['enemies'] = [spawn_enemy() for _ in range(NUM_ENEMIES)]
+    state['cheat'] = False
+    state['auto_follow'] = False
+    state['camera_follow'] = False
+    state['cam_angle'] = -40.0
+    state['cam_height'] = 12.0
+    state['cam_radius'] = GRID_SIZE * 1.1
+    state['game_over'] = False
+    state['player_dead_rot'] = 0.0
+
+
+def spawn_enemy():
+    r = GRID_SIZE/2 - 1
+    angle = random.uniform(0, 2*math.pi)
+    x = math.cos(angle) * random.uniform(r*0.5, r)
+    z = math.sin(angle) * random.uniform(r*0.5, r)
+    return {'pos':[x,0.0,z], 'base_scale':random.uniform(0.7,1.0), 'phase':random.uniform(0,2*math.pi)}
+
+
+
+def draw_checker_floor():
+    half = GRID_SIZE/2.0
+    step = 1.0
+    y = 0.0
+    glDisable(GL_LIGHTING)
+    purple = (0.78, 0.66, 0.96)
+    for i in range(int(GRID_SIZE)):
+        for j in range(int(GRID_SIZE)):
+            glColor3f(1.0, 1.0, 1.0) if (i + j) % 2 == 0 else glColor3f(*purple)
+            x0 = -half + i*step
+            z0 = -half + j*step
+            x1 = x0 + step
+            z1 = z0 + step
+            glBegin(GL_QUADS)
+            glVertex3f(x0, y, z0)
+            glVertex3f(x1, y, z0)
+            glVertex3f(x1, y, z1)
+            glVertex3f(x0, y, z1)
+            glEnd()
+    glEnable(GL_LIGHTING)
+
+
+def draw_colored_walls():
+    half = GRID_SIZE/2.0
+    h = 1.4
+    thickness = 0.2
+    glDisable(GL_LIGHTING)
+    
+    glColor3f(0.0, 0.0, 1.0)
+    glPushMatrix(); glTranslatef(0, h/2.0, -half - thickness/2.0); glScalef(GRID_SIZE + 0.1, h, thickness); glutSolidCube(1.0); glPopMatrix()
+    
+    glColor3f(0.0, 1.0, 1.0)
+    glPushMatrix(); glTranslatef(half + thickness/2.0, h/2.0, 0); glScalef(thickness, h, GRID_SIZE + 0.1); glutSolidCube(1.0); glPopMatrix()
+    
+    glColor3f(0.0, 1.0, 0.0)
+    glPushMatrix(); glTranslatef(0, h/2.0, half + thickness/2.0); glScalef(GRID_SIZE + 0.1, h, thickness); glutSolidCube(1.0); glPopMatrix()
+    
+    glColor3f(0.0, 1.0, 0.6)
+    glPushMatrix(); glTranslatef(-half - thickness/2.0, h/2.0, 0); glScalef(thickness, h, GRID_SIZE + 0.1); glutSolidCube(1.0); glPopMatrix()
+    glEnable(GL_LIGHTING)
+
+def draw_player():
+    x,z = state['player_pos'][0], state['player_pos'][2]
+    angle = state['player_angle']
+    glPushMatrix()
+    glTranslatef(x, 0.55, z)
+    glRotatef(-angle, 0, 1, 0)
+    if state['game_over']:
+        glRotatef(state['player_dead_rot'], 0, 0, 1)
+
+    glEnable(GL_COLOR_MATERIAL)
+
+    
+    glColor3f(0.2, 0.7, 0.9)
+    glPushMatrix(); glTranslatef(0.0, 0.05, 0.0); glScalef(0.5, 0.6, 0.35); glutSolidCube(1.0); glPopMatrix()
+
+    
+    glColor3f(1.0, 0.87, 0.72)
+    glPushMatrix(); glTranslatef(0.0, 0.45, 0.0); glutSolidSphere(0.22, 20, 20); glPopMatrix()
+
+
+    glColor3f(0.2, 0.7, 0.9)
+
+    glPushMatrix(); glTranslatef(-0.35, 0.05, 0.0); glScalef(0.18, 0.14, 0.36); glutSolidCube(1.0); glPopMatrix()
+
+    glPushMatrix(); glTranslatef(0.35, 0.05, 0.0); glScalef(0.18, 0.14, 0.36); glutSolidCube(1.0); glPopMatrix()
+
+
+    glPushMatrix(); glTranslatef(-0.13, -0.33, 0.0); glScalef(0.2, 0.38, 0.3); glutSolidCube(1.0); glPopMatrix()
+    glPushMatrix(); glTranslatef(0.13, -0.33, 0.0); glScalef(0.2, 0.38, 0.3); glutSolidCube(1.0); glPopMatrix()
+
+    glColor3f(0.1, 0.1, 0.1)
+    glPushMatrix()
+    glTranslatef(0.0, 0.10, 0.35)
+    glRotatef(90, 1, 0, 0)  
+    gluCylinder(QUADRIC, 0.07, 0.07, 0.9, 16, 1)
+    glRotatef(-90, 1, 0, 0)
+    glTranslatef(0.0, 0.0, 0.9)
+    glutSolidSphere(0.08, 12, 12)
+    glPopMatrix()
+
+    glDisable(GL_COLOR_MATERIAL)
+    glPopMatrix()
+
+
+def draw_enemy(e):
+    x,z = e['pos'][0], e['pos'][2]
+    scale = e['base_scale'] * (0.9 + 0.15 * math.sin(e['phase']))
+    glPushMatrix()
+    glTranslatef(x, 0.35, z)
+    glScalef(scale, scale, scale)
+    glEnable(GL_COLOR_MATERIAL)
+    
+    glColor3f(0.9, 0.2, 0.2)
+    glutSolidSphere(0.35, 18, 18)
+    glColor3f(0.05, 0.05, 0.05)
+    glPushMatrix(); glTranslatef(0, 0.18, 0.12); glutSolidSphere(0.12, 14, 14); glPopMatrix()
+    glDisable(GL_COLOR_MATERIAL)
+    glPopMatrix()
+
+
+def draw_bullet(b):
+    x,y,z = b['pos']
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glScalef(0.18, 0.18, 0.18)
+    glDisable(GL_LIGHTING)
+    glColor3f(0.96, 0.85, 0.05)
+    glutSolidCube(1.0)
+    glEnable(GL_LIGHTING)
+    glPopMatrix()
+
+
+def keyboard(key, x, y):
+    try:
+        key = key.decode('utf-8')
+    except Exception:
+        pass
+    if key in ('w','W'): move_player(0.3)
+    elif key in ('s','S'): move_player(-0.3)
+    elif key in ('a','A'): state['player_angle'] += 6.0
+    elif key in ('d','D'): state['player_angle'] -= 6.0
+    elif key in ('c','C'): state['cheat'] = not state['cheat']
+    elif key in ('v','V'): state['auto_follow'] = not state['auto_follow']
+    elif key in ('r','R'): reset_state()
+    glutPostRedisplay()
+
+
+def special_keys(key, x, y):
+    if key == GLUT_KEY_UP: state['cam_height'] += 0.5
+    elif key == GLUT_KEY_DOWN: state['cam_height'] = max(1.0, state['cam_height'] - 0.5)
+    elif key == GLUT_KEY_LEFT: state['cam_angle'] -= 5.0
+    elif key == GLUT_KEY_RIGHT: state['cam_angle'] += 5.0
+    glutPostRedisplay()
+
+
+def mouse(button, s, x, y):
+    if button == GLUT_LEFT_BUTTON and s == GLUT_DOWN and not state['game_over']:
+        fire_bullet()
+    elif button == GLUT_RIGHT_BUTTON and s == GLUT_DOWN:
+        state['camera_follow'] = not state['camera_follow']
+    glutPostRedisplay()
+
+
+def move_player(dist):
+    if state['game_over']: return
+    rad = math.radians(state['player_angle'])
+    dx = math.cos(rad) * dist
+    dz = -math.sin(rad) * dist
+    nx = state['player_pos'][0] + dx
+    nz = state['player_pos'][2] + dz
+    bound = GRID_SIZE/2.0 - 0.7
+    state['player_pos'][0] = max(-bound, min(bound, nx))
+    state['player_pos'][2] = max(-bound, min(bound, nz))
+
+
+def fire_bullet():
+    rad = math.radians(state['player_angle'])
+    dirx = math.cos(rad)
+    dirz = -math.sin(rad)
+    bx = state['player_pos'][0] + dirx * 1.3
+    by = 0.55
+    bz = state['player_pos'][2] + dirz * 1.3
+    b = {'pos':[bx, by, bz], 'dir':[dirx, 0, dirz], 'life':BULLET_LIFETIME}
+    state['bullets'].append(b)
+
+
+def update_scene():
+    if not hasattr(update_scene, 'last'):
+        update_scene.last = time.time()
+    now = time.time()
+    dt = now - update_scene.last
+    update_scene.last = now
+
+    if not state['game_over']:
+        if state['cheat']:
+            state['player_angle'] += 140.0 * dt
+            for e in state['enemies']:
+                if enemy_in_sight(e):
+                    fire_bullet()
+                    break
+
+        remove_b = []
+        for b in state['bullets']:
+            b['pos'][0] += b['dir'][0] * BULLET_SPEED
+            b['pos'][2] += b['dir'][2] * BULLET_SPEED
+            b['life'] -= 1
+            out_of_bounds = (abs(b['pos'][0]) > GRID_SIZE/2 + 2 or abs(b['pos'][2]) > GRID_SIZE/2 + 2)
+            expired = (b['life'] <= 0)
+            if out_of_bounds or expired:
+                remove_b.append((b, out_of_bounds))
+        for b, oob in remove_b:
+            if b in state['bullets']:
+                state['bullets'].remove(b)
+                if oob:
+                    state['missed'] += 1
+
+        for e in state['enemies']:
+            e['phase'] += 2.0 * dt
+            px,pz = state['player_pos'][0], state['player_pos'][2]
+            ex,ez = e['pos'][0], e['pos'][2]
+            vx = px - ex; vz = pz - ez
+            d = math.hypot(vx, vz)
+            if d > 0.001:
+                nx = vx/d; nz = vz/d
+                e['pos'][0] += nx * ENEMY_SPEED
+                e['pos'][2] += nz * ENEMY_SPEED
+            if d < 0.7:
+                state['life'] -= 1
+                e.update(spawn_enemy())
+                if state['life'] <= 0:
+                    state['game_over'] = True
+
+        for b in state['bullets'][:]:
+            for e in state['enemies'][:]:
+                if check_bullet_enemy(b, e):
+                    state['score'] += 10
+                    e.update(spawn_enemy())
+                    if b in state['bullets']:
+                        state['bullets'].remove(b)
+                    break
+
+        if state['missed'] >= MAX_MISSED:
+            state['game_over'] = True
+    else:
+        if state['player_dead_rot'] < 90:
+            state['player_dead_rot'] += 60.0 * dt
+
+    if state['cheat'] and state['auto_follow'] and state['camera_follow']:
+        target = state['player_angle']
+        diff = (target - state['cam_angle'])
+        while diff > 180: diff -= 360
+        while diff < -180: diff += 360
+        state['cam_angle'] += diff * 0.2
+
+    glutPostRedisplay()
+
+
+def check_bullet_enemy(b, e):
+    bx,bz = b['pos'][0], b['pos'][2]
+    ex,ez = e['pos'][0], e['pos'][2]
+    return math.hypot(bx-ex, bz-ez) < 0.7
+
+
+def enemy_in_sight(e):
+    px,pz = state['player_pos'][0], state['player_pos'][2]
+    ex,ez = e['pos'][0], e['pos'][2]
+    vx = ex - px; vz = ez - pz; d = math.hypot(vx,vz)
+    if d > 25: return False
+    ang_to = math.degrees(math.atan2(-vz, vx))
+    diff = ang_to - state['player_angle']
+    while diff > 180: diff -= 360
+    while diff < -180: diff += 360
+    return abs(diff) < 10
+
+
+def display():
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glMatrixMode(GL_PROJECTION); glLoadIdentity()
+    gluPerspective(60.0, WINDOW_W/float(WINDOW_H), 0.1, 200.0)
+    glMatrixMode(GL_MODELVIEW); glLoadIdentity()
+
+    if state['camera_follow']:
+        px,pz = state['player_pos'][0], state['player_pos'][2]
+        ang = math.radians(state['player_angle'])
+        eyeX = px - math.cos(ang) * 1.0
+        eyeY = state['cam_height'] - 2.0
+        eyeZ = pz + math.sin(ang) * 1.0
+        cx = px + math.cos(ang) * 4.0; cy = 0.5; cz = pz - math.sin(ang) * 4.0
+        gluLookAt(eyeX, eyeY, eyeZ, cx, cy, cz, 0,1,0)
+    else:
+        ang = math.radians(state['cam_angle'])
+        r = state['cam_radius']
+        eyeX = math.cos(ang) * r; eyeY = state['cam_height']; eyeZ = math.sin(ang) * r
+        gluLookAt(eyeX, eyeY, eyeZ, 0, 0, 0, 0,1,0)
+
+    glEnable(GL_LIGHTING)
+    glEnable(GL_LIGHT0)
+    glEnable(GL_NORMALIZE)
+    light_pos = [30.0, 40.0, 30.0, 1.0]
+    glLightfv(GL_LIGHT0, GL_POSITION, light_pos)
+    glLightfv(GL_LIGHT0, GL_DIFFUSE,  [1.0,1.0,1.0,1.0])
+    glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0,1.0,1.0,1.0])
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.05,0.05,0.05,1.0])
+
+    draw_checker_floor()
+    draw_colored_walls()
+
+    for e in state['enemies']:
+        draw_enemy(e)
+    draw_player()
+    for b in state['bullets']:
+        draw_bullet(b)
+
+    glDisable(GL_LIGHTING)
+    draw_hud()
+
+    glutSwapBuffers()
+
+
+def draw_hud():
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); gluOrtho2D(0, WINDOW_W, 0, WINDOW_H)
+    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity()
+    glColor3f(1,1,1)
+    draw_text(20, WINDOW_H - 40, f"Player Life Remaining: {state['life']}")
+    draw_text(20, WINDOW_H - 70, f"Game Score: {state['score']}")
+    draw_text(20, WINDOW_H - 100, f"Player Bullet Missed: {state['missed']}")
+    if state['game_over']:
+        draw_text(WINDOW_W//2 - 140, WINDOW_H//2, "GAME OVER - Press R to Restart")
+    glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW)
+
+
+def draw_text(x, y, text):
+    glRasterPos2f(x, y)
+    for ch in text:
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, ord(ch))
+
+
+def init_gl():
+    global QUADRIC
+    glClearColor(0.0, 0.0, 0.0, 1.0)
+    glEnable(GL_DEPTH_TEST)
+    glShadeModel(GL_SMOOTH)
+    QUADRIC = gluNewQuadric()
+    gluQuadricNormals(QUADRIC, GLU_SMOOTH)
+
+
+def idle():
+    update_scene()
+
+
+def main():
+    glutInit()
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH)
+    glutInitWindowSize(WINDOW_W, WINDOW_H)
+    glutInitWindowPosition(50, 50)
+    glutCreateWindow(b"Bullet Frenzy - Template-Compliant")
+    init_gl()
+    reset_state()
+    glutDisplayFunc(display)
+    glutKeyboardFunc(keyboard)
+    glutSpecialFunc(special_keys)
+    glutMouseFunc(mouse)
+    glutIdleFunc(idle)
+    glutMainLoop()
+
+if __name__ == '__main__':
+    main()
