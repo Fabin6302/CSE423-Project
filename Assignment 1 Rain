@@ -1,0 +1,152 @@
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
+
+
+window_width, window_height = 800, 600
+rain = []
+wind = 0.0            
+bg_color = [0.0, 0.0, 0.1]  
+target_bg = [0.0, 0.0, 0.1]
+
+def init_rain():
+    global rain
+    rain.clear()
+    for i in range(200):
+        x = (i * 37) % window_width
+        y = (i * 59) % window_height
+        rain.append([x, y])
+
+
+def draw_house():
+    glColor3f(0.96, 0.87, 0.70)
+    glBegin(GL_TRIANGLES)
+    glVertex2f(300, 200); glVertex2f(500, 200); glVertex2f(500, 350)
+    glVertex2f(300, 200); glVertex2f(500, 350); glVertex2f(300, 350)
+    glEnd()
+
+    glColor3f(0.55, 0.27, 0.07)
+    glBegin(GL_TRIANGLES)
+    glVertex2f(280, 350); glVertex2f(520, 350); glVertex2f(400, 450)
+    glEnd()
+
+    glColor3f(0.36, 0.25, 0.20)
+    glBegin(GL_TRIANGLES)
+    glVertex2f(370, 200); glVertex2f(430, 200); glVertex2f(430, 280)
+    glVertex2f(370, 200); glVertex2f(430, 280); glVertex2f(370, 280)
+    glEnd()
+
+    glColor3f(0.6, 0.8, 1.0)
+    glBegin(GL_TRIANGLES)
+    glVertex2f(310, 260); glVertex2f(360, 260); glVertex2f(360, 310)
+    glVertex2f(310, 260); glVertex2f(360, 310); glVertex2f(310, 310)
+    glEnd()
+    glBegin(GL_TRIANGLES)
+    glVertex2f(440, 260); glVertex2f(490, 260); glVertex2f(490, 310)
+    glVertex2f(440, 260); glVertex2f(490, 310); glVertex2f(440, 310)
+    glEnd()
+
+    glColor3f(0.2, 0.2, 0.2)
+    glBegin(GL_LINES)
+    glVertex2f(335, 260); glVertex2f(335, 310)
+    glVertex2f(310, 285); glVertex2f(360, 285)
+    glVertex2f(465, 260); glVertex2f(465, 310)
+    glVertex2f(440, 285); glVertex2f(490, 285)
+    glEnd()
+
+
+def display():
+    global rain, bg_color
+
+    for i in range(3):
+        if abs(bg_color[i] - target_bg[i]) > 0.01:
+            bg_color[i] += (target_bg[i] - bg_color[i]) * 0.02
+
+    glClearColor(bg_color[0], bg_color[1], bg_color[2], 1.0)
+    glClear(GL_COLOR_BUFFER_BIT)
+
+    glColor3f(0.2, 0.5, 0.2)
+    glBegin(GL_TRIANGLES)
+    glVertex2f(0, 0); glVertex2f(window_width, 0); glVertex2f(window_width, 200)
+    glVertex2f(0, 0); glVertex2f(window_width, 200); glVertex2f(0, 200)
+    glEnd()
+
+    glColor3f(0.0, 0.6, 0.0)
+    for i in range(0, window_width, 50):
+        glBegin(GL_TRIANGLES)
+        glVertex2f(i, 200)
+        glVertex2f(i+50, 200)
+        glVertex2f(i+25, 300)
+        glEnd()
+
+    draw_house()
+
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glLineWidth(2.5)
+
+    glBegin(GL_LINES)
+    for drop in rain:
+        glColor4f(0.8, 0.8, 1.0, 0.7)
+        glVertex2f(drop[0], drop[1])
+        glColor4f(0.3, 0.3, 1.0, 0.5)
+        glVertex2f(drop[0] + wind, drop[1] - 20)
+    glEnd()
+
+    glLineWidth(1.0)
+    glDisable(GL_BLEND)
+
+    glFlush()
+
+
+def update(value):
+    global rain, wind
+    for drop in rain:
+        drop[0] += wind
+        drop[1] -= 10
+        if drop[1] < 0:
+            drop[1] = window_height
+        if drop[0] < 0:
+            drop[0] = window_width
+        elif drop[0] > window_width:
+            drop[0] = 0
+    glutPostRedisplay()
+    glutTimerFunc(33, update, 0)  
+
+
+def special_keys(key, x, y):
+    global wind
+    if key == GLUT_KEY_LEFT:
+        wind -= 0.5   
+    elif key == GLUT_KEY_RIGHT:
+        wind += 0.5   
+    elif key == GLUT_KEY_UP:
+        wind = 0      
+
+def keyboard(key, x, y):
+    global target_bg
+    key = key.lower()
+    if key == b'd':  
+        target_bg = [0.5, 0.8, 1.0]
+    elif key == b'n':  
+        target_bg = [0.0, 0.0, 0.1]
+    elif key == b'r':  
+        init_rain()
+
+
+def main():
+    glutInit()
+    glutInitDisplayMode(GLUT_SINGLE | GLUT_RGB)
+    glutInitWindowSize(window_width, window_height)
+    glutCreateWindow(b"Realistic House with Rainfall")
+    gluOrtho2D(0, window_width, 0, window_height)
+
+    init_rain()
+
+    glutDisplayFunc(display)
+    glutTimerFunc(0, update, 0)
+    glutSpecialFunc(special_keys)
+    glutKeyboardFunc(keyboard)
+    glutMainLoop()
+
+main()
